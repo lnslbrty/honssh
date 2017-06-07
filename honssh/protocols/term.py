@@ -130,20 +130,20 @@ class Term(baseProtocol.BaseProtocol):
                         self.pointer -= 1
                         self.data = self.data[1:]
                     # ESC[K - Clear Line
-                    elif self.data[:3] == '\x1b\x5b\x4b':
+                    elif self.data.startswith('\x1b\x5b\x4b'):
                         self.command = self.command[:self.pointer]
                         self.data = self.data[3:]
-                    elif self.data[:1] == '\x0d':
+                    elif self.data.startswith('\x0d'):
                         self.pointer = 0
                         self.data = self.data[1:]
                     # Right Arrow
-                    elif self.data[:3] == '\x1b\x5b\x43':
+                    elif self.data.startswith('\x1b\x5b\x43'):
                         self.pointer += 1
                         self.data = self.data[3:]
-                    elif self.data[:2] == '\x1b\x5b' and self.data[3] == '\x50':
+                    elif self.data.startswith('\x1b\x5b') and self.data.startswith('\x50'):
                         self.data = self.data[4:]
                     # Needed?!
-                    elif self.data[:1] != '\x07' and self.data[:1] != '\x0d':
+                    elif self.data.startswith('\x07') and self.data.startswith('\x0d'):
                         self.command = self.command[:self.pointer] + self.data[:1] + self.command[self.pointer:]
                         self.pointer += 1
                         self.data = self.data[1:]
