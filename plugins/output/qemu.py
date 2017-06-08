@@ -33,12 +33,14 @@ from honssh import log
 from honssh.config import Config
 from honssh.utils import validation
 
+from threading import Lock, Event
+
 import subprocess
 import socket
 import time
 
 
-global LOGPREF, QEMU_EXEC, QEMU_IMAG, QEMU_ARGS, ACTIVE_ATTACKER, QEMU_PROCESS
+global LOGPREF, QEMU_EXEC, QEMU_IMAG, QEMU_ARGS, ACTIVE_ATTACKER, ATTACKER_EVENT, QEMU_PROCESS
 LOGPREF = '[PLUGIN][QEMU]'
 QEMU_RTIM = 20
 QEMU_EXEC = 'qemu-system-i386'
@@ -46,34 +48,50 @@ QEMU_IMAG = 'buildroot/bzImage'
 QEMU_VNCP = 5901
 QEMU_ARGS = '-enable-kvm -cpu host -m 256 -smp 1 -net nic,model=virtio -net user,hostfwd=tcp:{3:s}:{0:d}-:22 -kernel {1:s} -vnc 127.0.0.1:{2:d}'
 
-ACTIVE_ATTACKER = 0
+
 QEMU_PROCESS = None
 
+class AtomicCounter:
+    def __init__(self, initial=0):
+        self.value = initial
+        self._lock = Lock()
+
+    def increment(self, num=1):
+        with self._lock:
+            self.value += num
+            return self.value
+
+ACTIVE_ATTACKER = AtomicCounter()
+ATTACKER_EVENT = Event()
 
 class Plugin():
 
     def __init__(self):
+        global ATTACKER_EVENT
+        ATTACKER_EVENT.clear()
         self.cfg = Config.getInstance()
 
-    def connection_made(self, sensor):
-        global ACTIVE_ATTACKER
-        ACTIVE_ATTACKER += 1
+    def channel_opened(self, sensor):
+        global ACTIVE_ATTACKER, ATTACKER_EVENT
+        ACTIVE_ATTACKER.increment(1)
+        ATTACKER_EVENT.set()
 
-    def connection_lost(self, sensor):
-        global ACTIVE_ATTACKER
+    def channel_closed(self, sensor):
+        global ACTIVE_ATTACKER, ATTACKER_EVENT
 
-        if ACTIVE_ATTACKER == 1:
+        ATTACKER_EVENT.clear()
+        if ACTIVE_ATTACKER.value == 1:
             log.msg(log.RED, LOGPREF, 'No attacker remaining, restarting QEMU in %ds' % (self.cfg.getint(['qemu', 'restart_time'], default=QEMU_RTIM)))
-            time.sleep(self.cfg.getint(['qemu', 'restart_time'], default=QEMU_RTIM))
-            if ACTIVE_ATTACKER == 1:
+            if ATTACKER_EVENT.wait( self.cfg.getint(['qemu', 'restart_time'], default=QEMU_RTIM) ) is not True:
                 log.msg(log.RED, LOGPREF, 'RESTARTING QEMU instance')
                 if self.qemu_stop() is False:
                     log.msg(log.RED, LOGPREF, 'FATAL: QEMU instance failed to stop')
                 if self.qemu_start() is False:
                     log.msg(log.RED, LOGPREF, 'FATAL: QEMU instance failed to start')
             else:
-                log.msg(log.RED, LOGPREF, 'ABORT RESTARTING QEMU instance, ACTIVE ATTACKER: %d' % (ACTIVE_ATTACKER))
-        ACTIVE_ATTACKER -= 1
+                log.msg(log.RED, LOGPREF, 'ABORT RESTARTING QEMU instance, active attacker: %d' % (ACTIVE_ATTACKER.value))
+
+        log.msg(log.RED, LOGPREF, 'Remaining attacker: %d' % (ACTIVE_ATTACKER.increment(-1)))
 
     def validate_config(self):
         if self.cfg.getboolean(['honeypot-static', 'enabled'], default=False) is False:
