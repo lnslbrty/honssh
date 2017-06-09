@@ -142,9 +142,9 @@ class Plugin():
         run = True
         while run:
             try:
-                testsock.connect( (self.cfg.get(['honeypot-static', 'honey_ip']), self.cfg.getint(['honeypot-static', 'honey_port'])) )
-                testsock.close()
-                run = False
+                if testsock.connect_ex( (self.cfg.get(['honeypot-static', 'honey_ip']), self.cfg.getint(['honeypot-static', 'honey_port'])) ) == 0:
+                    testsock.close()
+                    run = False
             except socket.error, exc:
                 log.msg(log.PLAIN, LOGPREF, 'QEMU not ready, SSH connection failed: %s' % (str(exc)))
                 time.sleep(0.25)
