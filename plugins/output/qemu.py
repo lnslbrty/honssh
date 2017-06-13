@@ -28,6 +28,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from twisted.internet import threads
 from honssh import log
 
 from honssh.config import Config
@@ -77,6 +78,9 @@ class Plugin():
         ATTACKER_EVENT.set()
 
     def channel_closed(self, sensor):
+        qemu_restart_defer = threads.deferToThread(self.qemu_restart)
+
+    def qemu_restart(self):
         global ACTIVE_ATTACKER, ATTACKER_EVENT
 
         ATTACKER_EVENT.clear()
@@ -144,8 +148,8 @@ class Plugin():
             try:
                 if testsock.connect_ex( (self.cfg.get(['honeypot-static', 'honey_ip']), self.cfg.getint(['honeypot-static', 'honey_port'])) ) == 0:
                     testsock.close()
-                    run = False
             except socket.error, exc:
                 log.msg(log.PLAIN, LOGPREF, 'QEMU not ready, SSH connection failed: %s' % (str(exc)))
                 time.sleep(0.25)
-                continue
+            else:
+                run = False
