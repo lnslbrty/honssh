@@ -46,7 +46,7 @@ LOGPREF = '[PLUGIN][QEMU]'
 QEMU_RTIM = 20
 QEMU_EXEC = 'qemu-system-i386'
 QEMU_IMAG = 'buildroot/bzImage'
-QEMU_VNCP = 5901
+QEMU_VNCP = 1
 QEMU_ARGS = '-enable-kvm -cpu host -m 256 -smp 1 -net nic,model=virtio -net user,hostfwd=tcp:{3:s}:{0:d}-:22 -kernel {1:s} -vnc 127.0.0.1:{2:d}'
 
 
