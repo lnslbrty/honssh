@@ -1,0 +1,91 @@
+# User Definition Config File
+#
+# https://github.com/tnich/honssh/wiki/Password-Spoofing
+#
+# User authentication spoofing can be defined with two ways - fixed and/or random.
+#
+# For the fixed mode, you must supply a list of valid passwords that will be accepted.
+# For the random mode, you must supply a random chance. In this mode, every password entered has a random chance of being correct.
+#
+# General note:
+# Access is always granted if supplied password matches real_password of corresponding user.
+#
+# Special note for random mode:
+# Random mode will first consider successful user/pass combinations from the past (contained in spoof.log)
+# and then do the chance algorithm.
+#
+#
+# Fixed User Example
+# [root]
+# real_password = toor
+# fake_passwords = fakePass1, fakePass2, fakePass3
+#
+# This will allow a user to login with root:fakePass1, root:fakePass2, root:fakePass3
+# real_password is the real password for HonSSH to substitute in.
+#
+#
+# Random User Example
+# [peg]
+# real_password = 123456
+# random_chance = 25
+#
+# This will allow a user to login as peg, and 25% of the passwords attempted will be accepted as valid.
+# real_password is the real password for HonSSH to substitute in.
+#
+# Fixed and Random User Example
+# [root]
+# real_password = toor
+# fake_passwords = fakePass1, fakePass2, fakePass3
+# random_chance = 25
+#
+# This will allow a user to login with root:fakePass1, root:fakePass2, root:fakePass3 and 25% of the passwords attempted will be accepted as valid
+# real_password is the real password for HonSSH to substitute in.
+
+[root]
+real_password = toor
+fake_passwords = user, admin, admin1
+random_chance = 1
+[ubnt]
+real_password = user
+fake_passwords = ubnt
+[support]
+real_password = user
+fake_passwords = support
+[admin]
+real_password = user
+fake_passwords = admin1, admin123, 123123
+random_chance = 1
+[pi]
+real_password = user
+fake_passwords = raspberrypi, raspberry
+[user]
+real_password = user
+fake_passwords = user, 1234
+[user1]
+real_password = user
+fake_passwords = user, user1, 1234
+[aaron]
+real_password = user
+fake_passwords = user
+random_chance = 25
+[conrad]
+real_password = user
+fake_passwords = user
+random_chance = 25
+[daniel]
+real_password = user
+fake_passwords = user
+random_chance = 25
+[tony]
+real_password = user
+fake_passwords = user
+random_chance = 25
+[henry]
+real_password = user
+fake_passwords = user
+random_chance = 25
+[susi]
+real_password = user
+fake_passwords = user
+random_chance = 25
+
