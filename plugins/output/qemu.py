@@ -128,7 +128,8 @@ class Plugin():
                        self.cfg.get(['honeypot-static', 'honey_ip']))
             log.msg(log.PLAIN, LOGPREF, 'running cmd: ' + exe + ' ' +args)
             QEMU_PROCESS = subprocess.Popen([exe] + args.split(' '), executable=exe)
-        if QEMU_PROCESS is not None:
+        time.sleep(0.25)
+        if QEMU_PROCESS.poll() is None:
             return True
         return False
 
@@ -144,12 +145,11 @@ class Plugin():
     def qemu_wait_guest_ssh(self):
         testsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         run = True
-        while run:
+        while run is True:
             try:
                 if testsock.connect_ex( (self.cfg.get(['honeypot-static', 'honey_ip']), self.cfg.getint(['honeypot-static', 'honey_port'])) ) == 0:
                     testsock.close()
+                    run = False
             except socket.error, exc:
                 log.msg(log.PLAIN, LOGPREF, 'QEMU not ready, SSH connection failed: %s' % (str(exc)))
                 time.sleep(0.25)
-            else:
-                run = False
