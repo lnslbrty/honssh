@@ -122,10 +122,13 @@ class Plugin():
         global QEMU_PROCESS
         if QEMU_PROCESS is None:
             exe = self.cfg.get(['qemu', 'exec'], default=QEMU_EXEC)
+            exeargs = self.cfg.get(['qemu', 'args'], default='')
             args = QEMU_ARGS.format(self.cfg.getint(['honeypot-static', 'honey_port']),
                        self.cfg.get(['qemu', 'image'], default=QEMU_IMAG),
                        self.cfg.getint(['qemu', 'vnc'], default=QEMU_VNCP),
                        self.cfg.get(['honeypot-static', 'honey_ip']))
+            if len(exeargs) > 0:
+                args += ' ' + str(exeargs)
             log.msg(log.PLAIN, LOGPREF, 'running cmd: ' + exe + ' ' +args)
             QEMU_PROCESS = subprocess.Popen([exe] + args.split(' '), executable=exe)
         time.sleep(0.25)
