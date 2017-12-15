@@ -58,6 +58,10 @@ ssh_banner =
 # default: 10
 connection_timeout = 10
 
+# data_timeout: data recv/input timeout (0 == disabled)
+# required: YES
+data_timeout = 20
+
 #-----------------------#
 #   HONEYPOT STATIC     #
 #-----------------------#

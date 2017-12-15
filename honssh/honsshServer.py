@@ -26,20 +26,38 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from twisted.internet import reactor
+from twisted.internet.error import AlreadyCalled
 from twisted.conch.ssh import transport
 from honssh import log
+from honssh.config import Config
 
 
 class HonsshServer(transport.SSHServerTransport):
+    def timedOut(self):
+        log.msg(log.LRED, '[SERVER]', 'TIMEOUT for %s' % (self.getPeer().address))
+        self.transport.loseConnection()
+
     def connectionMade(self):
         """
         Called when the connection is made to the other side.  We sent our
         version and the MSG_KEXINIT packet.
         """
+        self.cfg = Config.getInstance()
+        self.data_timeout = self.cfg.getint(['honeypot', 'data_timeout'])
+        if self.data_timeout > 0:
+            self.timeout = reactor.callLater(self.data_timeout, self.timedOut)
         self.transport.write('%s\r\n' % (self.ourVersionString,))
         self.currentEncryptions = transport.SSHCiphers('none', 'none', 'none', 'none')
         self.currentEncryptions.setKeys('', '', '', '', '', '')
         self.otherVersionString = 'Unknown'
+
+    def connectionLost(self, reason):
+        try:
+            if self.data_timeout > 0:
+                self.timeout.cancel()
+        except AlreadyCalled:
+            pass
 
     def dataReceived(self, data):
         """
@@ -50,6 +68,12 @@ class HonsshServer(transport.SSHServerTransport):
         @type data: C{str}
         """
         self.buf += data
+
+        try:
+            if self.data_timeout > 0:
+                self.timeout.reset(self.data_timeout)
+        except AlreadyCalled:
+            return
 
         if not self.gotVersion:
             if self.buf.find('\n', self.buf.find('SSH-')) == -1:
