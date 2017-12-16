@@ -50,13 +50,13 @@ class Plugin():
         self.chat_id    = self.cfg.getint(['telegrambot', 'chat_id'])
         try:
             self.bot = telegram.Bot(self.auth_token)
-            log.msg(log.GREEN, '[PLUGIN][TELEGRAM]', 'Telegram: ' + str(self.bot))
+            log.msg(log.GREEN, '[PLUGIN][TELEGRAM]', 'User/ID: %s/%s' % \
+                (str(self.bot.get_me().username), str(self.bot.get_me().id)))
         except Exception as err:
             log.msg(log.RED, '[PLUGIN][TELEGRAM]', str(err))
-        self.tgSend('<b>Server started.</b>')
 
     def start_server(self):
-        pass
+        self.tgSend('<b>Server started.</b>')
 
     def set_server(self, server):
         pass
@@ -69,7 +69,7 @@ class Plugin():
 
     def connection_lost(self, sensor):
         session = sensor['session']
-        self.tgSend('<b>LOST</b> Connection from %s:%s\n' % (session['peer_ip'], session['peer_port']))
+        self.tgSend('<b>LOST</b> Connection to %s:%s\n' % (session['peer_ip'], session['peer_port']))
 
     def set_client(self, sensor):
         pass
