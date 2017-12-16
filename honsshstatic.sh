@@ -12,5 +12,5 @@ fi
 . ${VENV}/bin/activate
 export PYTHONPATH=":${VENV}"
 
-pip install --upgrade twisted geoip watchdog cryptography pyasn1 paramiko
+pip install --upgrade twisted geoip watchdog cryptography pyasn1 paramiko python-telegram-bot
 twistd -y honssh.tac -p honssh.pid -n
