@@ -1,8 +1,10 @@
 HonSSH
 
 https://github.com/tnich/honssh
+https://github.com/lnslbrty/honssh
 
 Copyright (C) 2016 Thomas Nicholson
+Copyright (C) 2017 Toni Uhlig
 
 HonSSH is designed to be used in conjunction with a high interaction honeypot. HonSSH sits between the attacker and the honey pot and creates two separate SSH conncetions.
 

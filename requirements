@@ -7,3 +7,6 @@ python-watchdog
 # If you require docker support:
 docker
 docker-py
+
+# telegrambot
+python-telegram-bot
