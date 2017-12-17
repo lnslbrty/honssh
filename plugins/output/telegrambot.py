@@ -46,8 +46,9 @@ class Plugin():
 
     def __init__(self):
         self.cfg = Config.getInstance()
-        self.auth_token = self.cfg.get   (['telegrambot', 'auth_token'])
-        self.chat_id    = self.cfg.getint(['telegrambot', 'chat_id'])
+        self.only_success = self.cfg.getboolean(['telegrambot', 'only_success'])
+        self.auth_token   = self.cfg.get       (['telegrambot', 'auth_token'])
+        self.chat_id      = self.cfg.getint    (['telegrambot', 'chat_id'])
         try:
             self.bot = telegram.Bot(self.auth_token)
             log.msg(log.GREEN, '[PLUGIN][TELEGRAM]', 'User/ID: %s/%s' % \
@@ -62,14 +63,16 @@ class Plugin():
         pass
 
     def connection_made(self, sensor):
-        session = sensor['session']
-        self.tgSend('Connection from <a href="http://%s">%s:%s</a>\n%s' % \
-            (session['peer_ip'], session['peer_ip'], session['peer_port'], \
-            '<code>Country: '+session['country']+'</code>\n' if len(session['country']) > 0 else ''))
+        if self.only_success is False:
+            session = sensor['session']
+            self.tgSend('Connection from <a href="http://%s">%s:%s</a>\n%s' % \
+                        (session['peer_ip'], session['peer_ip'], session['peer_port'], \
+                        '<code>Country: '+session['country']+'</code>\n' if len(session['country']) > 0 else ''))
 
     def connection_lost(self, sensor):
-        session = sensor['session']
-        self.tgSend('<b>LOST</b> Connection to %s:%s\n' % (session['peer_ip'], session['peer_port']))
+        if self.only_success is False:
+            session = sensor['session']
+            self.tgSend('<b>LOST</b> Connection to %s:%s\n' % (session['peer_ip'], session['peer_port']))
 
     def set_client(self, sensor):
         pass
@@ -77,9 +80,11 @@ class Plugin():
     def login_successful(self, sensor):
         session = sensor['session']
         auth = session['auth']
-        self.tgSend('Login <b>SUCCESS</b> from %s:%s\n<code>user: %s\npass: %s\nversion: %s</code>\n' % \
-            (session['peer_ip'], session['peer_port'], \
-            auth['username'], auth['password'], session['version']))
+        self.tgSend('Login <b>SUCCESS</b> from %s:%s\n<code>user: %s\npass: %s\nversion: %s%s</code>\n' % \
+                    (session['peer_ip'], session['peer_port'], \
+                    auth['username'], auth['password'], session['version'],
+                    '\nCountry: ' + session['country'] if self.only_success is True and \
+                                                          len(session['country']) > 0 else ''))
 
     def login_failed(self, sensor):
         pass
@@ -104,6 +109,7 @@ class Plugin():
 
     def validate_config(self):
         props = [['telegrambot', 'enabled'],
+                 ['telegrambot', 'only_success'],
                  ['telegrambot', 'auth_token'],
                  ['telegrambot', 'chat_id']]
         for prop in props:
