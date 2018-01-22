@@ -52,7 +52,7 @@ class Plugin():
         return subprocess.call(iptables_cmd)
 
     def iptables_exclude_redirect(self, subnet, useSudo=True, doCheck=True):
-        iptables_cmdstr = 'iptables -t nat %s PREROUTING%s ! -s %s -p tcp --dport 22 -j REDIRECT --to-port 22' % \
+        iptables_cmdstr = 'iptables -t nat %s PREROUTING%s -s %s -p tcp --dport 22 -j REDIRECT --to-port 22' % \
             ('-C' if doCheck else '-I', '' if doCheck else ' 1', subnet)
         iptables_cmd = iptables_cmdstr.split(' ')
         if useSudo:
