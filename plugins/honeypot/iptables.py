@@ -51,14 +51,39 @@ class Plugin():
         log.msg(log.PLAIN, LOGPREF, 'running cmd: ' + ' '.join(iptables_cmd))
         return subprocess.call(iptables_cmd)
 
+    def iptables_exclude_redirect(self, subnet, useSudo=True, doCheck=True):
+        iptables_cmdstr = 'iptables -t nat %s PREROUTING%s ! -s %s -p tcp --dport 22 -j REDIRECT --to-port 22' % \
+            ('-C' if doCheck else '-I', '' if doCheck else ' 1', subnet)
+        iptables_cmd = iptables_cmdstr.split(' ')
+        if useSudo:
+            iptables_cmd.insert(0, 'sudo')
+        log.msg(log.PLAIN, LOGPREF, 'running cmd: ' + ' '.join(iptables_cmd))
+        return subprocess.call(iptables_cmd)
+
     def validate_config(self):
         props = [['iptables', 'enabled'], ['iptables', 'sudo']]
         for prop in props:
-            if not self.cfg.check_exist(prop, validation.check_valid_boolean):
+            if not self.cfg._getconv(prop):
                 return False
+
+        subnets = self.cfg.get(['iptables', 'exclude'], raw=True, vars=None, default='')
+        if len(subnets) > 0:
+            for subnet in subnets.split(','):
+                useSudo = self.cfg.getboolean(['iptables','sudo'], default=True)
+                retval = self.iptables_exclude_redirect(subnet, useSudo=useSudo)
+                if retval == 1:
+                    if self.iptables_exclude_redirect(subnet, useSudo=useSudo, doCheck=False) == 0:
+                        log.msg(log.GREEN, LOGPREF, 'Rule append ok: exclude ' + str(subnet))
+                    else:
+                        log.msg(log.RED, LOGPREF, 'Rule append FAILED: exclude ' + str(subnet))
+                elif retval == 0:
+                    log.msg(log.GREEN, LOGPREF, 'Rule `exclude ' + str(subnet) + '` does already exist')
+                else:
+                    log.msg(log.RED, LOGPREF, 'Rule check FAILED: `exclude ' + str(subnet) + '`')
 
         options = self.cfg.options('iptables')
         for opt in options:
+            if opt == 'exclude': continue
             if not self.cfg.check_exist(['iptables',opt], validation.check_valid_boolean): continue
             if not self.cfg.getboolean(['iptables', opt], default=False): continue
             lst = opt.split('_')
