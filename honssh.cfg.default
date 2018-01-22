@@ -62,6 +62,12 @@ connection_timeout = 10
 # required: YES
 data_timeout = 20
 
+# Socket path for event communication (json over unix sockets).
+# Try it with: nc -U [path-to-ocket]
+# required: No
+# default:
+#socket = /tmp/honssh.sock
+
 #-----------------------#
 #   HONEYPOT STATIC     #
 #-----------------------#

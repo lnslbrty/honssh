@@ -29,7 +29,7 @@
 from twisted.conch.ssh import factory
 from twisted.internet import reactor
 
-from honssh import client, networking, honsshServer, connections, plugins
+from honssh import client, networking, honsshServer, connections, plugins, ipc
 from honssh import log
 from honssh import output_handler
 from honssh import post_auth_handler
@@ -39,7 +39,8 @@ from honssh.protocols import ssh
 
 
 class HonsshServerTransport(honsshServer.HonsshServer):
-    def __init__(self):
+    def __init__(self, ipc_factory):
+        self.ipc_factory = ipc_factory
         self.cfg = Config.getInstance()
         self.timeoutCount = 0
         self.interactors = []
@@ -67,7 +68,7 @@ class HonsshServerTransport(honsshServer.HonsshServer):
         self.honey_port = 0
 
     def connectionMade(self):
-        self.out = output_handler.Output(self.factory)
+        self.out = output_handler.Output(self.factory, self.ipc_factory)
         self.net = networking.Networking()
 
         self.sshParse = ssh.SSH(self, self.out)
@@ -184,6 +185,10 @@ class HonsshServerFactory(factory.SSHFactory):
             elif self.cfg.getboolean(['honeypot-docker', 'enabled']):
                 log.msg(log.LRED, '[SERVER][ERR]', 'You need to configure the ssh_banner for docker manually!')
 
+        if self.cfg.check_exist(['honeypot', 'socket']):
+            log.msg(log.LGREEN, '[HONSSH]', 'HonSSH IPC socket init: %s' % (self.cfg.get(['honeypot', 'socket'])))
+        self.ipc = ipc.make_ipc_server(self.cfg.get(['honeypot', 'socket']))
+
         plugin_list = plugins.get_plugin_list()
         loaded_plugins = plugins.import_plugins(plugin_list)
         for plugin in loaded_plugins:
@@ -195,7 +200,7 @@ class HonsshServerFactory(factory.SSHFactory):
             log.msg(log.LGREEN, '[HONSSH]', 'HonSSH Boot Sequence Complete - Ready for attacks!')
 
     def buildProtocol(self, addr):
-        t = HonsshServerTransport()
+        t = HonsshServerTransport(self.ipc)
 
         t.ourVersionString = self.ourVersionString
         t.factory = self

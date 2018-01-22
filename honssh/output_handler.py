@@ -46,7 +46,8 @@ import GeoIP
 
 
 class Output(object):
-    def __init__(self, factory):
+    def __init__(self, factory, ipc_factory):
+        self.ipc = ipc_factory
         self.cfg = Config.getInstance()
         self.connections = factory.connections
         self.plugin_servers = factory.plugin_servers
@@ -79,6 +80,7 @@ class Output(object):
             plugin_name = plugins.get_plugin_name(plugin)
             for plugin_server in self.plugin_servers:
                 if plugin_server['name'] == plugin_name:
+                    self.ipc.ipcSendAll('set_server', {})
                     plugins.run_plugins_function([plugin], 'set_server', False, plugin_server['server'])
                     break
 
@@ -88,6 +90,7 @@ class Output(object):
 
         session = self.connections.add_session(self.sensor_name, self.end_ip, self.end_port, dt, self.honey_ip,
                                                self.honey_port, self.session_id, self.logLocation, country)
+        self.ipc.ipcSendAll('connection_made', session)
         plugins.run_plugins_function(self.loaded_plugins, 'connection_made', True, session)
 
     def connection_lost(self):
@@ -102,11 +105,13 @@ class Output(object):
                     self._channel_closed(channel['uuid'])
 
         session = self.connections.set_session_close(self.session_id, dt)
+        self.ipc.ipcSendAll('connection_lost', session)
         plugins.run_plugins_function(self.loaded_plugins, 'connection_lost', True, session)
         self.connections.del_session(self.session_id)
 
     def set_version(self, version):
         session = self.connections.set_client(self.session_id, version)
+        self.ipc.ipcSendAll('set_client', session)
         plugins.run_plugins_function(self.loaded_plugins, 'set_client', True, session)
 
     def login_successful(self, username, password, spoofed):
@@ -114,17 +119,22 @@ class Output(object):
         self.make_session_folder()
 
         auth = self.connections.add_auth(self.session_id, dt, username, password, True, spoofed)
+        self.ipc.ipcSendAll('login_successful', auth)
         plugins.run_plugins_function(self.loaded_plugins, 'login_successful', True, auth)
 
     def login_failed(self, username, password):
         dt = self.get_date_time()
 
         auth = self.connections.add_auth(self.session_id, dt, username, password, False, False)
+        self.ipc.ipcSendAll('login_failed', auth)
         plugins.run_plugins_function(self.loaded_plugins, 'login_failed', True, auth)
 
     def command_entered(self, channel_id, the_command, blocked=False):
         dt = self.get_date_time()
         command = self.connections.add_command(channel_id, dt, the_command, blocked)
+        self.ipc.ipcSendAll('command_entered', {
+            'session_id' : self.session_id, 'channel_id' : channel_id, 'command' : the_command
+        })
         plugins.run_plugins_function(self.loaded_plugins, 'command_entered', True, command)
 
         the_commands_split = re.findall(r'(?:[^;&|<>()"\']|["\'](?:\\.|[^"\'])*[\'"])+', the_command)
@@ -206,6 +216,9 @@ class Output(object):
     def download_started(self, channel_id, link):
         dt = self.get_date_time()
         download = self.connections.add_download(channel_id, dt, link)
+        self.ipc.ipcSendAll('download_started', {
+            'session_id' : self.session_id, 'channel_id' : channel_id, 'link' : link
+        })
         plugins.run_plugins_function(self.loaded_plugins, 'download_started', True, download)
 
     def file_downloaded(self, download):
@@ -226,6 +239,9 @@ class Output(object):
 
                 download = self.connections.set_download_close(channel_id, dt, link, file, success, file_meta[0],
                                                                file_meta[1])
+                self.ipc.ipcSendAll('download_finished', {
+                    'session_id' : self.session_id, 'download' : download
+                })
                 plugins.run_plugins_function(self.loaded_plugins, 'download_finished', True, download)
         else:
             if error:
@@ -237,6 +253,9 @@ class Output(object):
     def channel_opened(self, channel_id, channel_name):
         dt = self.get_date_time()
         channel = self.connections.add_channel(self.session_id, channel_name, dt, channel_id)
+        self.ipc.ipcSendAll('channel_opened', {
+            'session_id' : self.session_id, 'channel_id' : channel_id, 'channel_name' : channel_name
+        })
         plugins.run_plugins_function(self.loaded_plugins, 'channel_opened', True, channel)
 
     def channel_closed(self, channel):
@@ -245,6 +264,9 @@ class Output(object):
     def _channel_closed(self, channel_id):
         dt = self.get_date_time()
         channel = self.connections.set_channel_close(channel_id, dt)
+        self.ipc.ipcSendAll('channel_closed', {
+            'session_id' : self.session_id, 'channel_id' : channel_id
+        })
         plugins.run_plugins_function(self.loaded_plugins, 'channel_closed', True, channel)
 
     def packet_logged(self, direction, packet, payload):
