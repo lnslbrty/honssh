@@ -64,6 +64,8 @@ class Connections(object):
         return None
 
     def return_session(self, sensor, session):
+        if sensor is None:
+            return None
         sensor_copy = copy.deepcopy(sensor)
         sensor_copy.pop('sessions')
         sensor_copy['session'] = copy.deepcopy(session)
