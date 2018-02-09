@@ -102,6 +102,37 @@ honey_ip =
 honey_port = 
 
 #-----------------------#
+#   HONEYPOT QEMU       #
+#-----------------------#
+[honeypot-static-qemu]
+# Documentation to come
+enabled = false
+
+# Should HonSSH use this plugin to get the honeypot details (before authentication)
+pre-auth = false
+
+# Should HonSSH use this plugin to get the honeypot details (after authentication)
+post-auth = false
+
+# path to qemu executable
+exec = qemu-system-i386
+
+# path to qemu boot image
+image = buildroot/bzImage
+
+# vnc start display number
+vnc-start = 8
+
+# ssh start tcp port
+ssh-start = 22223
+
+# qemu memory in mbytes
+memory = 64
+
+# number of usable cpu cores for the VM
+cpus = 1
+
+#-----------------------#
 #   HONEYPOT SCRIPT     #
 #-----------------------#
 [honeypot-script]
