@@ -88,4 +88,7 @@ random_chance = 25
 real_password = user
 fake_passwords = user
 random_chance = 25
-
+[default]
+real_password = user
+fake_passwords = user, default
+random_chance = 25
